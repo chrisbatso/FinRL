@@ -61,11 +61,11 @@ class TensorboardCallback(BaseCallback):
         try:
             self.logger.record(key="train/reward", value=self.locals["rewards"][0])
 
-        except BaseException as error:
+        except Exception as error:
             try:
                 self.logger.record(key="train/reward", value=self.locals["reward"][0])
 
-            except BaseException as inner_error:
+            except Exception as inner_error:
                 # Handle the case where neither "rewards" nor "reward" is found
                 self.logger.record(key="train/reward", value=None)
                 # Print the original error and the inner error for debugging
@@ -89,7 +89,7 @@ class TensorboardCallback(BaseCallback):
                 self.logger.record(
                     key="train/reward_max", value=max(rollout_buffer_rewards)
                 )
-        except BaseException as error:
+        except Exception as error:
             # handle the case where "rewards" is not found
             self.logger.record(key="train/reward_min", value=None)
             self.logger.record(key="train/reward_mean", value=None)
@@ -137,6 +137,9 @@ class DRLAgent:
 
         if model_kwargs is None:
             model_kwargs = MODEL_KWARGS[model_name]
+        # Work on a copy: the caller's dict (or the module-level defaults)
+        # must not end up holding the noise object in place of its name.
+        model_kwargs = dict(model_kwargs)
 
         if "action_noise" in model_kwargs:
             n_actions = self.env.action_space.shape[-1]
@@ -214,17 +217,19 @@ class DRLAgent:
             # load agent
             model = MODELS[model_name].load(cwd)
             print("Successfully load model", cwd)
-        except BaseException as error:
+        except Exception as error:
             raise ValueError(f"Failed to load agent. Error: {str(error)}") from error
 
-        # test on the testing env
-        state = environment.reset()
+        # test on the testing env (Gymnasium API: reset -> (obs, info),
+        # step -> (obs, reward, terminated, truncated, info))
+        state, _ = environment.reset()
         episode_returns = []  # the cumulative_return / initial_account
         episode_total_assets = [environment.initial_total_asset]
         done = False
         while not done:
             action = model.predict(state, deterministic=deterministic)[0]
-            state, reward, done, _ = environment.step(action)
+            state, reward, terminated, truncated, _ = environment.step(action)
+            done = terminated or truncated
 
             total_asset = (
                 environment.amount
@@ -255,10 +260,11 @@ class DRLEnsembleAgent:
                 f"Model '{model_name}' not found in MODELS."
             )  # this is more informative than NotImplementedError("NotImplementedError")
 
-        if model_kwargs is None:
-            temp_model_kwargs = MODEL_KWARGS[model_name]
-        else:
-            temp_model_kwargs = model_kwargs.copy()
+        # Work on a copy: the caller's dict (or the module-level defaults)
+        # must not end up holding the noise object in place of its name.
+        temp_model_kwargs = dict(
+            MODEL_KWARGS[model_name] if model_kwargs is None else model_kwargs
+        )
 
         if "action_noise" in temp_model_kwargs:
             n_actions = env.action_space.shape[-1]
