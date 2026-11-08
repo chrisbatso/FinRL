@@ -34,3 +34,10 @@ rebalanced equal-weight basket and a random buy-and-hold median of 0.66; all boo
 difference contain zero. The agents become fully invested within a median of six days and barely trade afterwards;
 DDPG and TD3 produce identical test series at 20k and 100k steps for four of five seeds because their actions
 saturate at the 100-share cap on day one. Details in `report/report.md`.
+
+## Second grid (run 42504959639): observations x reward
+
+`config2.json`, `train_eval2.py`, `.github/workflows/evaluate2.yml`; results in `report2/`. Observations raw or
+VecNormalize, reward dollar / log return / excess over equal weight, five algorithms, five seeds, 20k steps: 150
+runs, Sharpe 0.52 +/- 0.24 against 0.65 for equal weight; a one-way ANOVA over the 30 cells gives p = 0.74. The
+repeated raw+dollar cell reproduced 15 of 25 first-grid runs bit for bit on different runners.
