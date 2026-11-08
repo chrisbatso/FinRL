@@ -4,6 +4,8 @@ shioaji Finance API
 
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import shioaji as sj
 
@@ -18,10 +20,17 @@ class SinopacDownloader:
         api: sj.Shioaji = None,
     ):
         if api is None:
+            api_key = os.environ.get("SHIOAJI_API_KEY")
+            secret_key = os.environ.get("SHIOAJI_SECRET_KEY")
+            if not api_key or not secret_key:
+                raise ValueError(
+                    "Set SHIOAJI_API_KEY and SHIOAJI_SECRET_KEY in the environment, "
+                    "or pass a logged-in shioaji.Shioaji instance as `api`."
+                )
             self.api = sj.Shioaji()
             self.api.login(
-                api_key="3Tn2BbtCzbaU1KSy8yyqLa4m7LEJJyhkRCDrK2nknbcu",
-                secret_key="Epakqh1Nt4inC3hsqowE2XjwQicPNzswkuLjtzj2WKpR",
+                api_key=api_key,
+                secret_key=secret_key,
                 contracts_cb=lambda security_type: print(
                     f"{repr(security_type)} fetch done."
                 ),

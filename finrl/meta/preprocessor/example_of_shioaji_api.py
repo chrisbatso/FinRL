@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import os
 
 import pandas as pd
 
@@ -35,8 +36,8 @@ def process_ticker_data(ticker):
     )
 
     processor = SinopacProcessor(
-        API_KEY="3Tn2BbtCzbaU1KSy8yyqLa4m7LEJJyhkRCDrK2nknbcu",
-        API_SECRET="Epakqh1Nt4inC3hsqowE2XjwQicPNzswkuLjtzj2WKpR",
+        API_KEY=os.environ["SHIOAJI_API_KEY"],
+        API_SECRET=os.environ["SHIOAJI_SECRET_KEY"],
     )
 
     cleaned_df = processor.clean_data(df_raw)
