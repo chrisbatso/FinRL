@@ -1,0 +1,10 @@
+{
+  "n_portfolios": 2000,
+  "n_names": 29,
+  "sharpe_mean": 0.6597162396029717,
+  "sharpe_median": 0.6601019495143627,
+  "sharpe_p05": 0.4323275140405596,
+  "sharpe_p95": 0.8730506269853706,
+  "return_median": 0.44350548461836414,
+  "frac_beating_ew_rebalanced": 0.546
+}

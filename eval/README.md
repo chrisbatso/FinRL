@@ -26,3 +26,11 @@ produce out-of-sample results distinguishable from an equal-weight basket, and h
 Every push to an `eval/**` branch runs `.github/workflows/evaluate.yml`: `prepare` builds the frame,
 `train` is a matrix over `seeds` x `timesteps` from `config.json` (each job trains all `algos`), `aggregate`
 writes `report.md` and figures to the `evaluation-report` artifact.
+
+## Results (run 42487102801, 2026-11-08)
+
+`report/report.md` and the figures next to it. Fifty runs: out-of-sample Sharpe 0.57 +/- 0.22 against 0.65 for the
+rebalanced equal-weight basket and a random buy-and-hold median of 0.66; all bootstrap intervals for the Sharpe
+difference contain zero. The agents become fully invested within a median of six days and barely trade afterwards;
+DDPG and TD3 produce identical test series at 20k and 100k steps for four of five seeds because their actions
+saturate at the 100-share cap on day one. Details in `report/report.md`.

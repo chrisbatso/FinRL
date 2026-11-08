@@ -1,0 +1,39 @@
+{
+  "rows": 125952,
+  "tickers": 41,
+  "dates": 3072,
+  "first": "2014-01-02",
+  "last": "2026-03-20",
+  "members_per_day_min": 27,
+  "members_per_day_max": 30,
+  "members_without_prices": [
+    {
+      "tic": "DWDP",
+      "min": "2017-09-01",
+      "max": "2019-04-01",
+      "count": 396
+    },
+    {
+      "tic": "UTX",
+      "min": "2014-01-02",
+      "max": "2020-04-03",
+      "count": 1575
+    },
+    {
+      "tic": "WBA",
+      "min": "2018-06-26",
+      "max": "2024-02-23",
+      "count": 1425
+    }
+  ],
+  "indicators": [
+    "macd",
+    "boll_ub",
+    "boll_lb",
+    "rsi_30",
+    "cci_30",
+    "dx_30",
+    "close_30_sma",
+    "close_60_sma"
+  ]
+}
