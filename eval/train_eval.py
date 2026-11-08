@@ -6,6 +6,7 @@ turbulence_threshold=70 on the VIX column for the trading environment). One devi
 replay buffer larger than the number of training steps is capped at that number, which cannot change
 behaviour (the buffer never fills) but avoids allocating 3 GB for TD3's 1,000,000 buffer on a CI runner.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,12 @@ from finrl.meta.preprocessor.preprocessors import data_split
 TUTORIAL_PARAMS = {
     "a2c": {"n_steps": 5, "ent_coef": 0.01, "learning_rate": 0.0007},
     "ddpg": {"batch_size": 128, "buffer_size": 50000, "learning_rate": 0.001},
-    "ppo": {"n_steps": 2048, "ent_coef": 0.01, "learning_rate": 0.00025, "batch_size": 128},
+    "ppo": {
+        "n_steps": 2048,
+        "ent_coef": 0.01,
+        "learning_rate": 0.00025,
+        "batch_size": 128,
+    },
     "td3": {"batch_size": 100, "buffer_size": 1000000, "learning_rate": 0.001},
     "sac": {
         "batch_size": 128,
@@ -58,18 +64,21 @@ def make_env(df: pd.DataFrame, turbulence_threshold=None) -> StockTradingEnv:
     )
 
 
-def rollout(model, df: pd.DataFrame, turbulence_threshold, out: pathlib.Path, split: str) -> dict:
+def rollout(
+    model, df: pd.DataFrame, turbulence_threshold, out: pathlib.Path, split: str
+) -> dict:
     env = make_env(df, turbulence_threshold)
     account, actions = DRLAgent.DRL_prediction(model=model, environment=env)
     account.to_csv(out / f"account_{split}.csv", index=False)
     actions.to_csv(out / f"actions_{split}.csv")
     values = account["account_value"].to_numpy(dtype=float)
+    # env.cost and env.trades are not reported: DRL_prediction wraps the env in a DummyVecEnv, which
+    # auto-resets after the terminal step and zeroes both. aggregate.py derives the cost paid from the
+    # executed trades in actions_<split>.csv instead.
     return {
         "days": int(len(values)),
         "final_value": float(values[-1]),
         "total_return": float(values[-1] / values[0] - 1),
-        "total_cost": float(env.cost),
-        "trades": int(env.trades),
     }
 
 
@@ -98,7 +107,9 @@ def main() -> None:
     agent = DRLAgent(env=env_train)
     model = agent.get_model(args.algo, model_kwargs=params, seed=args.seed, verbose=0)
     t0 = time.perf_counter()
-    model = agent.train_model(model=model, tb_log_name=args.algo, total_timesteps=args.timesteps)
+    model = agent.train_model(
+        model=model, tb_log_name=args.algo, total_timesteps=args.timesteps
+    )
     train_seconds = time.perf_counter() - t0
 
     meta = {
