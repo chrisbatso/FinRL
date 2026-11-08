@@ -238,6 +238,7 @@ def main() -> None:
             "algo": meta["algo"],
             "seed": meta["seed"],
             "timesteps": meta["timesteps"],
+            "cell": meta.get("variant") or f"{meta['timesteps']} steps",
             "train_seconds": meta.get("train_seconds"),
             **{f"test_{k}": v for k, v in m_test.items()},
             **{f"train_{k}": v for k, v in m_train.items()},
@@ -250,11 +251,15 @@ def main() -> None:
             **activity(actions, test, acc_series),
         }
         rows.append(row)
-        curves.setdefault((meta["algo"], meta["timesteps"]), {})[
-            meta["seed"]
-        ] = acc_series
+        curves.setdefault((meta["algo"], row["cell"]), {})[meta["seed"]] = acc_series
 
-    runs = pd.DataFrame(rows).sort_values(["timesteps", "algo", "seed"])
+    runs = pd.DataFrame(rows)
+    cells = cfg.get("cells") or sorted(runs["cell"].unique(), key=lambda c: (len(c), c))
+    cell_rank = {c: i for i, c in enumerate(cells)}
+    by_cell = lambda col: (
+        col.map(cell_rank) if col.name == "cell" else col
+    )  # noqa: E731
+    runs = runs.sort_values(["cell", "algo", "seed"], key=by_cell)
     runs.to_csv(out / "runs.csv", index=False)
 
     base_rows = {name: metrics(series.to_numpy()) for name, series in baselines.items()}
@@ -287,7 +292,9 @@ def main() -> None:
 
     # pooled: average the seeds' daily returns -> one series per (algo, timesteps)
     pooled = []
-    for (algo, steps), by_seed in sorted(curves.items()):
+    for (algo, cell), by_seed in sorted(
+        curves.items(), key=lambda kv: (cell_rank[kv[0][1]], kv[0][0])
+    ):
         rets = pd.DataFrame({s: v.pct_change() for s, v in by_seed.items()}).dropna()
         mean_ret = rets.mean(axis=1)
         common = mean_ret.index.intersection(r_ew.index)
@@ -298,7 +305,7 @@ def main() -> None:
         pooled.append(
             {
                 "algo": algo,
-                "timesteps": steps,
+                "cell": cell,
                 "n_seeds": len(by_seed),
                 "pooled_sharpe": sharpe(ra),
                 "sharpe_diff_vs_ew": sharpe(ra) - sharpe(rb),
@@ -311,7 +318,7 @@ def main() -> None:
     pooled.to_csv(out / "pooled.csv", index=False)
 
     summary = (
-        runs.groupby(["timesteps", "algo"])
+        runs.groupby(["cell", "algo"], sort=False)
         .agg(
             n_seeds=("seed", "count"),
             test_sharpe_mean=("test_sharpe", "mean"),
@@ -335,18 +342,19 @@ def main() -> None:
         )
         .reset_index()
     )
+    summary = summary.sort_values(["cell", "algo"], key=by_cell)
     summary.to_csv(out / "summary.csv", index=False)
 
     # ---- figures ----
-    budgets = sorted(runs["timesteps"].unique())
     algos = sorted(runs["algo"].unique())
-    for steps in budgets:
+    safe = lambda c: c.replace(" ", "").replace("+", "_")  # noqa: E731
+    for cell in cells:
         fig, axes = plt.subplots(
             1, len(algos), figsize=(4.2 * len(algos), 3.8), sharey=True
         )
         axes = np.atleast_1d(axes)
         for ax, algo in zip(axes, algos):
-            for s, series in sorted(curves.get((algo, steps), {}).items()):
+            for s, series in sorted(curves.get((algo, cell), {}).items()):
                 ax.plot(
                     pd.to_datetime(series.index),
                     series.to_numpy() / INITIAL,
@@ -369,23 +377,24 @@ def main() -> None:
                 ls="--",
                 label="DJIA",
             )
-            ax.set_title(f"{algo.upper()}, {steps:,} steps")
+            ax.set_title(f"{algo.upper()}, {cell}")
             ax.grid(alpha=0.3)
             ax.tick_params(axis="x", labelrotation=45, labelsize=8)
         axes[0].set_ylabel("value / initial")
         axes[-1].legend(fontsize=7, loc="upper left")
         fig.tight_layout()
-        fig.savefig(out / f"equity_{steps}.png", dpi=130)
+        fig.savefig(out / f"equity_{safe(cell)}.png", dpi=130)
         plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    for i, steps in enumerate(budgets):
-        sub = runs[runs["timesteps"] == steps]
+    fig, ax = plt.subplots(figsize=(max(8, 1.6 * len(algos) + 1.1 * len(cells)), 4.4))
+    width = min(0.18, 0.8 / max(len(cells), 1))
+    for i, cell in enumerate(cells):
+        sub = runs[runs["cell"] == cell]
         x = (
             np.array([algos.index(a) for a in sub["algo"]], dtype=float)
-            + (i - (len(budgets) - 1) / 2) * 0.18
+            + (i - (len(cells) - 1) / 2) * width
         )
-        ax.scatter(x, sub["test_sharpe"], s=28, alpha=0.8, label=f"{steps:,} steps")
+        ax.scatter(x, sub["test_sharpe"], s=28, alpha=0.8, label=cell)
     ax.axhspan(
         null_summary["sharpe_p05"],
         null_summary["sharpe_p95"],
@@ -414,20 +423,20 @@ def main() -> None:
     ax.set_ylabel("out-of-sample Sharpe")
     ax.set_title("Test-window Sharpe per seed")
     ax.grid(axis="y", alpha=0.3)
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=7, ncol=2)
     fig.tight_layout()
     fig.savefig(out / "sharpe_by_seed.png", dpi=130)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(5.2, 4.6))
-    for steps in budgets:
-        sub = runs[runs["timesteps"] == steps]
+    fig, ax = plt.subplots(figsize=(5.6, 4.8))
+    for cell in cells:
+        sub = runs[runs["cell"] == cell]
         ax.scatter(
             sub["train_sharpe"],
             sub["test_sharpe"],
             s=30,
             alpha=0.8,
-            label=f"{steps:,} steps",
+            label=cell,
         )
     lo = min(runs["train_sharpe"].min(), runs["test_sharpe"].min(), 0) - 0.2
     hi = max(runs["train_sharpe"].max(), runs["test_sharpe"].max()) + 0.2
@@ -436,7 +445,7 @@ def main() -> None:
     ax.set_xlabel("in-sample Sharpe (training window)")
     ax.set_ylabel("out-of-sample Sharpe (test window)")
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=7, ncol=2)
     fig.tight_layout()
     fig.savefig(out / "train_vs_test_sharpe.png", dpi=130)
     plt.close(fig)
@@ -494,7 +503,7 @@ def main() -> None:
     lines.append(
         tbl[
             [
-                "timesteps",
+                "cell",
                 "algo",
                 "n_seeds",
                 "test Sharpe",
@@ -536,7 +545,7 @@ def main() -> None:
     lines.append(
         ptbl[
             [
-                "timesteps",
+                "cell",
                 "algo",
                 "n_seeds",
                 "pooled Sharpe",
@@ -554,13 +563,13 @@ def main() -> None:
         f"anything smaller than that is indistinguishable from noise with {test['date'].nunique()} test days, whatever the point estimate says.\n"
     )
     lines.append("## Figures\n")
-    for steps in budgets:
-        lines.append(f"![equity {steps}](equity_{steps}.png)\n")
+    for cell in cells:
+        lines.append(f"![equity {cell}](equity_{safe(cell)}.png)\n")
     lines.append("![sharpe by seed](sharpe_by_seed.png)\n")
     lines.append("![train vs test](train_vs_test_sharpe.png)\n")
     lines.append("## Per-run table\n")
     cols = [
-        "timesteps",
+        "cell",
         "algo",
         "seed",
         "test_sharpe",

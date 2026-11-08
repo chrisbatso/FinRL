@@ -1,0 +1,119 @@
+name: FinRL evaluation 2 (observations x reward)
+
+on:
+  push:
+    branches: ["eval2/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: evaluate2-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+  INSTALL: >-
+    numpy pandas gymnasium "stable-baselines3>=2.0" sb3-contrib stockstats
+    scikit-learn matplotlib yfinance pyfolio-reloaded pandas-market-calendars
+    pytz requests beautifulsoup4 selenium webdriver-manager alpaca-py
+    alpaca-trade-api wrds tabulate
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      seeds: ${{ steps.cfg.outputs.seeds }}
+      cells: ${{ steps.cfg.outputs.cells }}
+      timesteps: ${{ steps.cfg.outputs.timesteps }}
+      algos: ${{ steps.cfg.outputs.algos }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - id: cfg
+        run: |
+          echo "seeds=$(jq -c .seeds eval/config2.json)" >> "$GITHUB_OUTPUT"
+          echo "cells=$(jq -c .cells eval/config2.json)" >> "$GITHUB_OUTPUT"
+          echo "timesteps=$(jq -r '.timesteps[0]' eval/config2.json)" >> "$GITHUB_OUTPUT"
+          echo "algos=$(jq -r '.algos | join(" ")' eval/config2.json)" >> "$GITHUB_OUTPUT"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ${{ env.INSTALL }}
+      - run: python eval/prepare_data.py --raw eval/data/raw_prices.csv.gz --vix eval/data/vix.csv --out eval_out/processed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+          retention-days: 14
+
+  train:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ${{ fromJSON(needs.prepare.outputs.seeds) }}
+        cell: ${{ fromJSON(needs.prepare.outputs.cells) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ${{ env.INSTALL }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+      - name: Train and roll out every algorithm for this seed and cell
+        run: |
+          read -r TRAIN_START TRAIN_END < <(jq -r '.train | join(" ")' eval/config2.json)
+          read -r TEST_START TEST_END < <(jq -r '.test | join(" ")' eval/config2.json)
+          cell="${{ matrix.cell }}"; obs="${cell%%+*}"; reward="${cell##*+}"
+          for algo in ${{ needs.prepare.outputs.algos }}; do
+            python eval/train_eval2.py --processed eval_out/processed/processed_full.csv.gz \
+              --algo "$algo" --seed ${{ matrix.seed }} --timesteps ${{ needs.prepare.outputs.timesteps }} \
+              --obs "$obs" --reward "$reward" \
+              --train "$TRAIN_START" "$TRAIN_END" --test "$TEST_START" "$TEST_END" --out eval_out/results
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results2-seed${{ matrix.seed }}-${{ matrix.cell }}
+          path: eval_out/results
+          retention-days: 14
+
+  aggregate:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy pandas matplotlib tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results2-*
+          path: eval_out/results
+          merge-multiple: true
+      - run: |
+          python eval/aggregate.py --processed eval_out/processed/processed_full.csv.gz --dji eval/data/dji.csv \
+            --results eval_out/results --config eval/config2.json \
+            --prepare-summary eval_out/processed/prepare_summary.json --out eval_out/report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evaluation2-report
+          path: eval_out/report
+          retention-days: 90
