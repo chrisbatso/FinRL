@@ -1,0 +1,115 @@
+name: FinRL evaluation
+
+on:
+  push:
+    branches: ["eval/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: evaluate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+  INSTALL: >-
+    numpy pandas gymnasium "stable-baselines3>=2.0" sb3-contrib stockstats
+    scikit-learn matplotlib yfinance pyfolio-reloaded pandas-market-calendars
+    pytz requests beautifulsoup4 selenium webdriver-manager alpaca-py
+    alpaca-trade-api wrds tabulate
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      seeds: ${{ steps.cfg.outputs.seeds }}
+      timesteps: ${{ steps.cfg.outputs.timesteps }}
+      algos: ${{ steps.cfg.outputs.algos }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - id: cfg
+        run: |
+          echo "seeds=$(jq -c .seeds eval/config.json)" >> "$GITHUB_OUTPUT"
+          echo "timesteps=$(jq -c .timesteps eval/config.json)" >> "$GITHUB_OUTPUT"
+          echo "algos=$(jq -r '.algos | join(" ")' eval/config.json)" >> "$GITHUB_OUTPUT"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ${{ env.INSTALL }}
+      - run: python eval/prepare_data.py --raw eval/data/raw_prices.csv.gz --vix eval/data/vix.csv --out eval_out/processed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+          retention-days: 14
+
+  train:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ${{ fromJSON(needs.prepare.outputs.seeds) }}
+        timesteps: ${{ fromJSON(needs.prepare.outputs.timesteps) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ${{ env.INSTALL }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+      - name: Train and roll out every algorithm for this seed and budget
+        run: |
+          read -r TRAIN_START TRAIN_END < <(jq -r '.train | join(" ")' eval/config.json)
+          read -r TEST_START TEST_END < <(jq -r '.test | join(" ")' eval/config.json)
+          for algo in ${{ needs.prepare.outputs.algos }}; do
+            python eval/train_eval.py --processed eval_out/processed/processed_full.csv.gz \
+              --algo "$algo" --seed ${{ matrix.seed }} --timesteps ${{ matrix.timesteps }} \
+              --train "$TRAIN_START" "$TRAIN_END" --test "$TEST_START" "$TEST_END" --out eval_out/results
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-seed${{ matrix.seed }}-steps${{ matrix.timesteps }}
+          path: eval_out/results
+          retention-days: 14
+
+  aggregate:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy pandas matplotlib tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          name: processed
+          path: eval_out/processed
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: eval_out/results
+          merge-multiple: true
+      - run: |
+          python eval/aggregate.py --processed eval_out/processed/processed_full.csv.gz --dji eval/data/dji.csv \
+            --results eval_out/results --config eval/config.json \
+            --prepare-summary eval_out/processed/prepare_summary.json --out eval_out/report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: eval_out/report
+          retention-days: 90
