@@ -1,0 +1,4 @@
+signal,train_all,train_ex2020,days,days_ex2020
+mean_rsi_30,-0.276,-0.256,2013,1760
+mean_sma60_rel,-0.22,-0.227,2013,1760
+vix,0.247,0.218,2013,1760

@@ -1,0 +1,81 @@
+{
+  "tickers": 38,
+  "days": 3072,
+  "members_per_day": {
+    "min": 27,
+    "max": 30,
+    "median": 29.0
+  },
+  "windows": {
+    "train": [
+      "2014-01-06",
+      "2021-12-31"
+    ],
+    "test": [
+      "2022-01-01",
+      "2026-03-20"
+    ]
+  },
+  "features": [
+    "close",
+    "macd",
+    "boll_ub",
+    "boll_lb",
+    "rsi_30",
+    "cci_30",
+    "dx_30",
+    "close_30_sma",
+    "close_60_sma",
+    "macd_rel",
+    "boll_pos",
+    "sma30_rel",
+    "sma60_rel",
+    "mom_12_1",
+    "rev_1m"
+  ],
+  "horizons": [
+    1,
+    5,
+    21
+  ],
+  "perms": 500,
+  "seed": 0,
+  "tests_per_window": 45,
+  "bonferroni_t": 3.2607674884205213,
+  "expected_max_abs_t_under_null": 2.7592254310839914,
+  "cs_abs_t_over_196": {
+    "train": 2,
+    "test": 3
+  },
+  "cs_abs_t_over_bonferroni": {
+    "train": 0,
+    "test": 0
+  },
+  "cs_largest_abs_t": {
+    "train": {
+      "feature": "boll_pos",
+      "horizon": 1,
+      "mean_ic": -0.013970775810051177,
+      "t": -2.4572441831152094
+    },
+    "test": {
+      "feature": "dx_30",
+      "horizon": 21,
+      "mean_ic": 0.04977995407043556,
+      "t": 2.504844272870739
+    }
+  },
+  "ts_p_under_005": {
+    "train": 29,
+    "test": 32
+  },
+  "mk_p_under_005": {
+    "train": 22,
+    "test": 5
+  },
+  "mde_h1_stationary": {
+    "train": 0.01655645769293998,
+    "test": 0.024479352075910787
+  },
+  "null_cs_ic_sd_30_names": 0.18569533817705186
+}
